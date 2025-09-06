@@ -1,0 +1,719 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { NavigationContainer } from '@react-navigation/native';
+import { BarChart } from 'react-native-chart-kit';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Dummy Data untuk pengujian
+const DUMMY_DATA = [
+  {
+    id: '1',
+    title: 'Vendor Laptop 2025',
+    choices: [
+      { id: 'c1', name: 'Lenovo', price: 1200, pros: ['Baterai tahan lama', 'Desain elegan'], cons: ['Layar kurang cerah'] },
+      { id: 'c2', name: 'Dell', price: 1500, pros: ['Performa tinggi', 'Service center mudah ditemukan'], cons: ['Harga mahal', 'Baterai boros'] },
+      { id: 'c3', name: 'Asus', price: 1100, pros: ['Ringan', 'Harga terjangkau', 'Pilihan warna banyak'], cons: ['Keyboard kurang nyaman'] },
+    ],
+  },
+  {
+    id: '2',
+    title: 'Pemasok Bahan Bangunan',
+    choices: [
+      { id: 'c4', name: 'PT Semen Abadi', price: 200, pros: ['Bahan berkualitas', 'Diskon besar'], cons: ['Pengiriman lambat'] },
+      { id: 'c5', name: 'CV Beton Jaya', price: 250, pros: ['Pengiriman cepat', 'Pilihan produk lengkap'], cons: ['Harga sedikit mahal'] },
+    ],
+  },
+];
+
+const Tab = createBottomTabNavigator();
+
+// Palette Warna
+const COLORS = {
+  primaryGreen: '#2ECC71',
+  secondaryGreen: '#27AE60',
+  primaryBlue: '#3498DB',
+  secondaryBlue: '#2980B9',
+  lightGray: '#F5F5F5',
+  darkText: '#333333',
+  white: '#FFFFFF',
+};
+
+// Fungsi perhitungan
+const calculateRecommendation = (choices) => {
+  if (choices.length === 0) return null;
+
+  let bestChoice = null;
+  let highestScore = -Infinity;
+
+  choices.forEach(choice => {
+    // Scoring: harga (nilai lebih rendah lebih baik) + jumlah kelebihan (nilai lebih tinggi lebih baik)
+    const priceScore = -choice.price; // Negatif agar harga lebih rendah mendapatkan skor lebih tinggi
+    const prosScore = choice.pros.length;
+    const score = priceScore + prosScore;
+
+    if (score > highestScore) {
+      highestScore = score;
+      bestChoice = choice;
+    }
+  });
+
+  return bestChoice;
+};
+
+// Komponen Input Data
+const DataInputScreen = ({ navigation, choices, setChoices, selectedTitle, setSelectedTitle, titles, setTitles }) => {
+  const [newTitle, setNewTitle] = useState('');
+  const [newChoice, setNewChoice] = useState({ name: '', price: '', pros: [''], cons: [''] });
+
+  const addChoice = () => {
+    setChoices([...choices, { ...newChoice, id: `c${Date.now()}` }]);
+    setNewChoice({ name: '', price: '', pros: [''], cons: [''] });
+  };
+
+  const addField = (type) => {
+    setNewChoice(prev => ({
+      ...prev,
+      [type]: [...prev[type], ''],
+    }));
+  };
+
+  const updateField = (text, index, type) => {
+    const newArr = [...newChoice[type]];
+    newArr[index] = text;
+    setNewChoice(prev => ({ ...prev, [type]: newArr }));
+  };
+
+  const saveTitle = async () => {
+    if (!newTitle.trim()) {
+      Alert.alert("Error", "Judul Pemilihan tidak boleh kosong.");
+      return;
+    }
+    const newId = `t${Date.now()}`;
+    const newData = {
+      id: newId,
+      title: newTitle,
+      choices: choices.map(choice => ({ ...choice, price: parseFloat(choice.price) })),
+    };
+    const updatedTitles = [...titles, { id: newId, title: newTitle }];
+    setTitles(updatedTitles);
+    await AsyncStorage.setItem(`data_${newId}`, JSON.stringify(newData));
+    await AsyncStorage.setItem('titles', JSON.stringify(updatedTitles));
+    Alert.alert("Berhasil", `Judul "${newTitle}" berhasil disimpan.`);
+    
+    // Reset form
+    setNewTitle('');
+    setChoices([]);
+    setNewChoice({ name: '', price: '', pros: [''], cons: [''] });
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Buat Judul Pemilihan Baru</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Judul Pemilihan (contoh: Vendor Laptop 2025)"
+            value={newTitle}
+            onChangeText={setNewTitle}
+          />
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Daftar Pilihan</Text>
+          {choices.map((choice, index) => (
+            <View key={index} style={styles.choiceCard}>
+              <Text style={styles.choiceText}>{choice.name}</Text>
+              <Text style={styles.choiceText}>Harga: ${choice.price}</Text>
+              <Text style={styles.choiceText}>Kelebihan: {choice.pros.join(', ')}</Text>
+              <Text style={styles.choiceText}>Kekurangan: {choice.cons.join(', ')}</Text>
+            </View>
+          ))}
+          <View style={styles.choiceInputCard}>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Nama Pilihan"
+              value={newChoice.name}
+              onChangeText={(text) => setNewChoice({ ...newChoice, name: text })}
+            />
+            <TextInput
+              style={styles.textInput}
+              placeholder="Harga"
+              keyboardType="numeric"
+              value={newChoice.price}
+              onChangeText={(text) => setNewChoice({ ...newChoice, price: text })}
+            />
+            <Text style={styles.cardTitle}>Kelebihan:</Text>
+            {newChoice.pros.map((pro, index) => (
+              <TextInput
+                key={`pro-${index}`}
+                style={styles.textInput}
+                placeholder={`Kelebihan ${index + 1}`}
+                value={pro}
+                onChangeText={(text) => updateField(text, index, 'pros')}
+              />
+            ))}
+            <TouchableOpacity onPress={() => addField('pros')} style={styles.addButton}>
+              <Text style={styles.buttonText}>+ Tambah Kelebihan</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.cardTitle}>Kekurangan:</Text>
+            {newChoice.cons.map((con, index) => (
+              <TextInput
+                key={`con-${index}`}
+                style={styles.textInput}
+                placeholder={`Kekurangan ${index + 1}`}
+                value={con}
+                onChangeText={(text) => updateField(text, index, 'cons')}
+              />
+            ))}
+            <TouchableOpacity onPress={() => addField('cons')} style={styles.addButton}>
+              <Text style={styles.buttonText}>+ Tambah Kekurangan</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={addChoice} style={styles.primaryButton}>
+              <Text style={styles.buttonText}>Tambahkan Pilihan</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <TouchableOpacity onPress={saveTitle} style={styles.primaryButton}>
+          <Text style={styles.buttonText}>Simpan Data</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+// Komponen Dashboard
+const DashboardScreen = ({ navigation, selectedTitle, setSelectedTitle, titles, setTitles }) => {
+  const [data, setData] = useState(null);
+  const [sortKey, setSortKey] = useState('name');
+  const [sortOrder, setSortOrder] = useState('asc');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const storedTitles = await AsyncStorage.getItem('titles');
+        if (storedTitles) {
+          setTitles(JSON.parse(storedTitles));
+        } else {
+          // Jika tidak ada data, gunakan dummy
+          setTitles(DUMMY_DATA.map(d => ({ id: d.id, title: d.title })));
+          DUMMY_DATA.forEach(async d => {
+            await AsyncStorage.setItem(`data_${d.id}`, JSON.stringify(d));
+          });
+        }
+      } catch (e) {
+        console.error("Error fetching titles:", e);
+      }
+    };
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (selectedTitle) {
+        try {
+          const storedData = await AsyncStorage.getItem(`data_${selectedTitle.id}`);
+          if (storedData) {
+            setData(JSON.parse(storedData));
+          }
+        } catch (e) {
+          console.error("Error loading data for selected title:", e);
+        }
+      } else {
+        setData(null);
+      }
+    };
+    loadData();
+  }, [selectedTitle]);
+
+  const sortedChoices = data ? [...data.choices].sort((a, b) => {
+    let comparison = 0;
+    if (sortKey === 'price') {
+      comparison = a.price - b.price;
+    } else if (sortKey === 'pros') {
+      comparison = a.pros.length - b.pros.length;
+    } else {
+      comparison = a.name.localeCompare(b.name);
+    }
+    return sortOrder === 'asc' ? comparison : -comparison;
+  }) : [];
+
+  const chartData = {
+    labels: sortedChoices.map(c => c.name),
+    datasets: [
+      {
+        data: sortedChoices.map(c => c.price),
+        color: () => COLORS.primaryGreen,
+        strokeWidth: 2,
+      },
+    ],
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Pilih Judul Pemilihan</Text>
+          <View style={styles.dropdown}>
+            {titles.map(item => (
+              <TouchableOpacity
+                key={item.id}
+                onPress={() => setSelectedTitle(item)}
+                style={[styles.dropdownItem, selectedTitle?.id === item.id && styles.dropdownItemSelected]}
+              >
+                <Text style={[styles.dropdownText, selectedTitle?.id === item.id && styles.dropdownTextSelected]}>
+                  {item.title}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {data && (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Perbandingan Harga</Text>
+              <BarChart
+                data={chartData}
+                width={300}
+                height={220}
+                yAxisLabel="$"
+                chartConfig={{
+                  backgroundColor: COLORS.white,
+                  backgroundGradientFrom: COLORS.white,
+                  backgroundGradientTo: COLORS.lightGray,
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                  style: {
+                    borderRadius: 16,
+                  },
+                }}
+                style={styles.chart}
+              />
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Ringkasan Pilihan</Text>
+              <View style={styles.sortButtons}>
+                <TouchableOpacity onPress={() => setSortKey('price')} style={[styles.sortButton, sortKey === 'price' && styles.sortButtonActive]}>
+                  <Text style={styles.sortButtonText}>Urut Harga</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setSortKey('pros')} style={[styles.sortButton, sortKey === 'pros' && styles.sortButtonActive]}>
+                  <Text style={styles.sortButtonText}>Urut Kelebihan</Text>
+                </TouchableOpacity>
+              </View>
+              {sortedChoices.map((choice) => (
+                <View key={choice.id} style={styles.choiceSummaryCard}>
+                  <Text style={styles.choiceSummaryTitle}>{choice.name}</Text>
+                  <Text style={styles.choiceSummaryPrice}>Harga: ${choice.price}</Text>
+                  <View style={styles.listSection}>
+                    <Text style={styles.listTitle}>Kelebihan:</Text>
+                    {choice.pros.map((pro, index) => (
+                      <Text key={index} style={styles.listItem}>• {pro}</Text>
+                    ))}
+                  </View>
+                  <View style={styles.listSection}>
+                    <Text style={styles.listTitle}>Kekurangan:</Text>
+                    {choice.cons.map((con, index) => (
+                      <Text key={index} style={styles.listItem}>• {con}</Text>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+// Komponen Kesimpulan
+const ConclusionScreen = ({ navigation, selectedTitle }) => {
+  const [data, setData] = useState(null);
+  const [manualChoice, setManualChoice] = useState(null);
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (selectedTitle) {
+        try {
+          const storedData = await AsyncStorage.getItem(`data_${selectedTitle.id}`);
+          if (storedData) {
+            setData(JSON.parse(storedData));
+          }
+        } catch (e) {
+          console.error("Error loading data for conclusion:", e);
+        }
+      } else {
+        setData(null);
+      }
+    };
+    loadData();
+  }, [selectedTitle]);
+
+  const recommendedChoice = data ? calculateRecommendation(data.choices) : null;
+  const finalChoice = manualChoice || recommendedChoice;
+
+  const exportResult = () => {
+    if (!finalChoice) {
+      Alert.alert("Error", "Pilih salah satu pilihan terlebih dahulu.");
+      return;
+    }
+    const resultText = `
+    Rekomendasi Akhir:
+    Judul Pemilihan: ${data.title}
+    Pilihan Terpilih: ${finalChoice.name}
+    Harga: $${finalChoice.price}
+    Kelebihan: ${finalChoice.pros.join(', ')}
+    Kekurangan: ${finalChoice.cons.join(', ')}
+    `;
+    Alert.alert("Hasil Ekspor", resultText);
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {data && (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Rekomendasi Sistem</Text>
+              {recommendedChoice ? (
+                <View style={styles.resultCard}>
+                  <Text style={styles.resultText}>Pilihan terbaik adalah:</Text>
+                  <Text style={styles.resultName}>{recommendedChoice.name}</Text>
+                  <Text style={styles.resultDetails}>Harga: ${recommendedChoice.price}</Text>
+                </View>
+              ) : (
+                <Text style={styles.resultText}>Tidak ada data yang tersedia untuk dianalisis.</Text>
+              )}
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Pilih Manual</Text>
+              {data.choices.map((choice) => (
+                <TouchableOpacity
+                  key={choice.id}
+                  onPress={() => setManualChoice(choice)}
+                  style={[styles.manualChoiceButton, manualChoice?.id === choice.id && styles.manualChoiceButtonSelected]}
+                >
+                  <Text style={styles.manualChoiceText}>{choice.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {finalChoice && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Kesimpulan Akhir</Text>
+                <View style={styles.finalResultCard}>
+                  <Text style={styles.finalResultTitle}>{finalChoice.name}</Text>
+                  <Text style={styles.finalResultDetail}>Harga: ${finalChoice.price}</Text>
+                  <View style={styles.listSection}>
+                    <Text style={styles.listTitle}>Kelebihan:</Text>
+                    {finalChoice.pros.map((pro, index) => (
+                      <Text key={index} style={styles.listItem}>• {pro}</Text>
+                    ))}
+                  </View>
+                  <View style={styles.listSection}>
+                    <Text style={styles.listTitle}>Kekurangan:</Text>
+                    {finalChoice.cons.map((con, index) => (
+                      <Text key={index} style={styles.listItem}>• {con}</Text>
+                    ))}
+                  </View>
+                </View>
+                <TouchableOpacity onPress={exportResult} style={styles.primaryButton}>
+                  <Text style={styles.buttonText}>Ekspor Hasil</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+const App = () => {
+  const [selectedTitle, setSelectedTitle] = useState(null);
+  const [titles, setTitles] = useState([]);
+  const [choices, setChoices] = useState([]);
+
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        const storedTitles = await AsyncStorage.getItem('titles');
+        if (storedTitles) {
+          const parsedTitles = JSON.parse(storedTitles);
+          setTitles(parsedTitles);
+          if (parsedTitles.length > 0) {
+            setSelectedTitle(parsedTitles[0]);
+          }
+        } else {
+          // Store dummy data if no data exists
+          const dummyTitles = DUMMY_DATA.map(d => ({ id: d.id, title: d.title }));
+          setTitles(dummyTitles);
+          setSelectedTitle(dummyTitles[0]);
+          dummyTitles.forEach(async d => {
+            const dataToStore = DUMMY_DATA.find(item => item.id === d.id);
+            if (dataToStore) {
+              await AsyncStorage.setItem(`data_${d.id}`, JSON.stringify(dataToStore));
+            }
+          });
+          await AsyncStorage.setItem('titles', JSON.stringify(dummyTitles));
+        }
+      } catch (e) {
+        console.error("Failed to load initial data:", e);
+      }
+    };
+
+    loadInitialData();
+  }, []);
+
+  return (
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ color, size }) => {
+            let iconName;
+            if (route.name === 'Dashboard') {
+              iconName = 'dashboard';
+            } else if (route.name === 'Input Data') {
+              iconName = 'create';
+            } else if (route.name === 'Kesimpulan') {
+              iconName = 'check-circle';
+            }
+            return <Icon name={iconName} size={size} color={color} />;
+          },
+          tabBarActiveTintColor: COLORS.primaryBlue,
+          tabBarInactiveTintColor: COLORS.darkText,
+          tabBarStyle: {
+            backgroundColor: COLORS.white,
+            borderTopWidth: 0,
+            elevation: 5,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 3.84,
+          },
+          headerShown: false,
+        })}
+      >
+        <Tab.Screen name="Dashboard">
+          {() => <DashboardScreen {...{ selectedTitle, setSelectedTitle, titles, setTitles }} />}
+        </Tab.Screen>
+        <Tab.Screen name="Input Data">
+          {() => <DataInputScreen {...{ choices, setChoices, selectedTitle, setSelectedTitle, titles, setTitles }} />}
+        </Tab.Screen>
+        <Tab.Screen name="Kesimpulan">
+          {() => <ConclusionScreen {...{ selectedTitle, setSelectedTitle }} />}
+        </Tab.Screen>
+      </Tab.Navigator>
+    </NavigationContainer>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.lightGray,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  card: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.darkText,
+    marginBottom: 12,
+  },
+  textInput: {
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 12,
+    fontSize: 16,
+    color: COLORS.darkText,
+  },
+  addButton: {
+    backgroundColor: COLORS.secondaryGreen,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  primaryButton: {
+    backgroundColor: COLORS.primaryBlue,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  buttonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  choiceCard: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primaryGreen,
+  },
+  choiceInputCard: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+    padding: 16,
+  },
+  choiceText: {
+    fontSize: 14,
+    color: COLORS.darkText,
+  },
+  dropdown: {
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  dropdownItemSelected: {
+    backgroundColor: COLORS.primaryBlue,
+  },
+  dropdownText: {
+    color: COLORS.darkText,
+  },
+  dropdownTextSelected: {
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+  sortButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+  },
+  sortButton: {
+    backgroundColor: COLORS.lightGray,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  sortButtonActive: {
+    backgroundColor: COLORS.primaryGreen,
+  },
+  sortButtonText: {
+    color: COLORS.darkText,
+    fontWeight: 'bold',
+  },
+  choiceSummaryCard: {
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  choiceSummaryTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.darkText,
+    marginBottom: 4,
+  },
+  choiceSummaryPrice: {
+    fontSize: 14,
+    color: COLORS.secondaryBlue,
+    marginBottom: 8,
+  },
+  listSection: {
+    marginTop: 8,
+  },
+  listTitle: {
+    fontWeight: 'bold',
+    color: COLORS.darkText,
+  },
+  listItem: {
+    fontSize: 14,
+    color: COLORS.darkText,
+    marginLeft: 10,
+  },
+  resultCard: {
+    backgroundColor: COLORS.primaryGreen,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  resultText: {
+    color: COLORS.white,
+    fontSize: 18,
+    marginBottom: 4,
+  },
+  resultName: {
+    color: COLORS.white,
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  resultDetails: {
+    color: COLORS.white,
+    fontSize: 16,
+    marginTop: 8,
+  },
+  manualChoiceButton: {
+    backgroundColor: COLORS.lightGray,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  manualChoiceButtonSelected: {
+    backgroundColor: COLORS.primaryBlue,
+  },
+  manualChoiceText: {
+    color: COLORS.darkText,
+    fontWeight: '500',
+  },
+  finalResultCard: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+  },
+  finalResultTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.primaryGreen,
+    marginBottom: 4,
+  },
+  finalResultDetail: {
+    fontSize: 16,
+    color: COLORS.secondaryGreen,
+    marginBottom: 12,
+  },
+});
+
+export default App;
